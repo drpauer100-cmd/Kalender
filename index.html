@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Arzttermin Kalender</title>
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet" />
+<style>
+body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 20px; }
+#calendar { max-width: 1000px; margin: 40px auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+.modal { position: fixed; top:0; left:0; right:0; bottom:0; display: none; justify-content: center; align-items: center; background: rgba(0,0,0,0.5); z-index: 9999; }
+.modal-box { background:white; padding:20px; width:380px; border-radius:12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+input { width: 100%; margin: 8px 0; padding: 8px; }
+button { margin-top: 10px; padding: 10px; width: 100%; background: #1976d2; color:white; border:none; border-radius:6px; cursor:pointer; }
+button.cancel { background: #777; }
+</style>
+</head>
+<body>
+
+<h1 style="text-align:center;">DR.P.AUER Kalender</h1>
+
+<div id="calendar"></div>
+
+<!-- LOGIN MODAL -->
+<div id="loginModal" class="modal">
+  <div class="modal-box">
+    <h3>Login</h3>
+    <input type="text" id="loginUser" placeholder="Benutzername">
+    <input type="password" id="loginPass" placeholder="Passwort">
+    <button onclick="login()">Login</button>
+  </div>
+</div>
+
+<!-- ADD APPOINTMENT MODAL -->
+<div id="addModal" class="modal">
+  <div class="modal-box">
+    <h3>Neuen Termin hinzufügen</h3>
+    <input type="text" id="patientName" placeholder="Patientenname">
+    <input type="text" id="reason" placeholder="Grund des Besuchs">
+    <button onclick="saveAppointment()">Speichern</button>
+    <button class="cancel" onclick="closeAddModal()">Abbrechen</button>
+  </div>
+</div>
+
+<!-- EDIT APPOINTMENT MODAL -->
+<div id="editModal" class="modal">
+  <div class="modal-box">
+    <h3>Termin bearbeiten</h3>
+    <input type="text" id="editName">
+    <input type="text" id="editReason">
+    <button onclick="applyEdit()">Änderungen speichern</button>
+    <button onclick="deleteEvent()" style="background:#d32f2f">Löschen</button>
+    <button class="cancel" onclick="closeEditModal()">Abbrechen</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+<script>
+let calendar;
+let slotStart = null;
+let activeEvent = null;
+let currentUser = null;
+
+// Hardcoded users
+const users = { 'max':'123', 'anna':'abc' };
+
+// Save appointments to localStorage
+function saveToLocalStorage() {
+  const events = calendar.getEvents().map(ev => ({
+    title: ev.title,
+    start: ev.start.toISOString(),
+    end: ev.end.toISOString(),
+    extendedProps: ev.extendedProps
+  }));
+  localStorage.setItem('appointments', JSON.stringify(events));
+}
+
+// Load appointments
+function loadFromLocalStorage() {
+  const saved = JSON.parse(localStorage.getItem('appointments') || "[]");
+  saved.forEach(ev => {
+    calendar.addEvent({
+      title: ev.title,
+      start: new Date(ev.start),
+      end: new Date(ev.end),
+      extendedProps: ev.extendedProps
+    });
+  });
+}
+
+/* ----- LOGIN ----- */
+function login() {
+  const u = document.getElementById("loginUser").value.trim();
+  const p = document.getElementById("loginPass").value.trim();
+  if(users[u] && users[u]===p) {
+    currentUser=u;
+    document.getElementById("loginModal").style.display="none";
+    alert("Willkommen, "+currentUser+"!");
+  } else alert("Falscher Benutzername oder Passwort!");
+}
+
+/* ----- MODALS ----- */
+function openAddModal() { document.getElementById("addModal").style.display="flex"; }
+function closeAddModal() { document.getElementById("addModal").style.display="none"; document.getElementById("patientName").value=''; document.getElementById("reason").value=''; }
+
+function saveAppointment() {
+  if(!currentUser){ alert("Bitte einloggen!"); return; }
+  const name=document.getElementById("patientName").value.trim();
+  const reason=document.getElementById("reason").value.trim();
+  if(!name || !reason) return alert("Bitte alles ausfüllen!");
+  if(slotStart < new Date()) { alert("Vergangene Termine können nicht erstellt werden!"); return; }
+
+  const start=new Date(slotStart.getTime());
+  const end=new Date(start.getTime()+15*60000);
+
+  calendar.addEvent({
+    title: name+" – "+reason+` (Erstellt von: ${currentUser}, Geändert von: ${currentUser})`,
+    start, end,
+    extendedProps: { patient:name, reason:reason, createdBy:currentUser, editedBy:currentUser }
+  });
+
+  saveToLocalStorage(); closeAddModal();
+}
+
+function openEditModal(event){
+  if(event.start < new Date()) { alert("Vergangene Termine können nicht bearbeitet werden!"); return; }
+  document.getElementById("editModal").style.display="flex";
+  document.getElementById("editName").value=event.extendedProps.patient;
+  document.getElementById("editReason").value=event.extendedProps.reason;
+}
+
+function closeEditModal(){ document.getElementById("editModal").style.display="none"; activeEvent=null; }
+
+function applyEdit(){
+  const name=document.getElementById("editName").value.trim();
+  const reason=document.getElementById("editReason").value.trim();
+  if(!name || !reason) return alert("Bitte alles ausfüllen!");
+
+  activeEvent.setProp("title", `${name} – ${reason} (Erstellt von: ${activeEvent.extendedProps.createdBy}, Geändert von: ${currentUser})`);
+  activeEvent.setExtendedProp("patient",name);
+  activeEvent.setExtendedProp("reason",reason);
+  activeEvent.setExtendedProp("editedBy",currentUser);
+
+  saveToLocalStorage(); closeEditModal();
+}
+
+function deleteEvent(){
+  if(!confirm("Termin wirklich löschen?")) return;
+  activeEvent.remove();
+  saveToLocalStorage();
+  closeEditModal();
+}
+
+/* ----- CALENDAR ----- */
+document.addEventListener("DOMContentLoaded", function() {
+  document.getElementById("loginModal").style.display="flex";
+
+  calendar = new FullCalendar.Calendar(document.getElementById("calendar"), {
+    initialView: "dayGridMonth",
+    editable: false,
+    locale: "de",
+    weekends: false,
+    headerToolbar: { left:"prev,next today", center:"title", right:"dayGridMonth,timeGridWeek,timeGridDay" },
+    buttonText: { today:"Aktuell", month:"Monat", week:"Woche", day:"Tag" },
+    selectable: false, // default false
+
+    // Month view: click day -> go to day view (do NOT open modal)
+    dateClick: function(info) {
+      if(!currentUser) { alert("Bitte zuerst einloggen!"); return; }
+      calendar.changeView('timeGridDay', info.dateStr);
+    },
+
+    // Enable selection only in day/week views
+    viewDidMount: function(info) {
+      if(info.view.type === "timeGridDay" || info.view.type === "timeGridWeek") {
+        calendar.setOption('selectable', true);
+      } else {
+        calendar.setOption('selectable', false);
+      }
+    },
+
+    select: function(info) {
+      if(!currentUser) { alert("Bitte zuerst einloggen!"); return; }
+      slotStart = info.start;
+      if(slotStart < new Date()) { alert("Vergangene Termine können nicht erstellt werden!"); return; }
+      openAddModal();
+    },
+
+    eventClick: function(info) {
+      if(!currentUser) { alert("Bitte zuerst einloggen!"); return; }
+      activeEvent = info.event;
+      if(calendar.view.type !== 'dayGridMonth') {
+        openEditModal(info.event);
+      }
+    },
+
+    slotDuration: "00:15:00",
+    slotMinTime: "08:00:00",
+    slotMaxTime: "18:00:00",
+    allDaySlot: false
+  });
+
+  loadFromLocalStorage();
+  calendar.render();
+});
+</script>
+</body>
+</html>
